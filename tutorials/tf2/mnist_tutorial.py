@@ -72,14 +72,25 @@ def main(_):
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         train_loss(loss)
 
+    # convert batchdatasat to regular list so we can store
+    store_adv = []
+    for (x, y) in data.train:
+        store_adv.append((x, y))
+
     # Train model with adversarial training
     for epoch in range(FLAGS.nb_epochs):
         # keras like display of progress
         progress_bar_train = tf.keras.utils.Progbar(60000)
-        for (x, y) in data.train:
+        for j, (x, y) in enumerate(store_adv):
             if FLAGS.adv_train:
-                # Replace clean example with adversarial example for adversarial training
-                x = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 40, np.inf)
+                # compute adversarial example and store it
+                x_adv = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 1, np.inf)
+                if FLAGS.store_adv:
+                    store_adv[j] = (x_adv, y)
+                # use it right away for alternating GDA
+                if FLAGS.alternating:
+                    x = x_adv
+
             train_step(x, y)
             progress_bar_train.add(x.shape[0], values=[("loss", train_loss.result())])
 
@@ -117,7 +128,7 @@ def main(_):
 if __name__ == "__main__":
     flags.DEFINE_integer("nb_epochs", 8, "Number of epochs.")
     flags.DEFINE_float("eps", 0.3, "Total epsilon for FGM and PGD attacks.")
-    flags.DEFINE_bool(
-        "adv_train", False, "Use adversarial training (on PGD adversarial examples)."
-    )
+    flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
+    flags.DEFINE_bool("adv_store", False, "Store adversarial examples for use in next epoch.")
+    flags.DEFINE_bool("alternating", True, "Use alternating vs simultaneous (use computed adversarial examples right away)")
     app.run(main)
